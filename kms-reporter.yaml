@@ -1,0 +1,78 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: ${NS}
+  name: kms-reporter-role
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "update", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: ${NS}
+  name: kms-reporter-role-binding
+subjects:
+- kind: ServiceAccount
+  name: kms-reporter-sa
+  namespace: ${NS}
+roleRef:
+  kind: Role
+  name: kms-reporter-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kms-reporter-sa
+  namespace: ${NS}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kms-reporter
+  namespace: ${NS}
+  labels:
+    app: kms-reporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kms-reporter
+  template:
+    metadata:
+      labels:
+        app: kms-reporter
+    spec:
+      serviceAccountName: kms-reporter-sa
+      containers:
+      - name: kms-reporter
+        image: ${REGISTRY}/kms/kms-reporter:${IMAGE_VERSION}
+        imagePullPolicy: IfNotPresent
+        command:
+          - /usr/local/bin/kms-reporter
+        args:
+          - --namespace=${NS}
+          - --etcd-endpoint=${ETCD_ENDPOINT}
+          - --etcd-client-crt=${ETCD_CLIENT_TLS_PATH}/etcd-client.crt
+          - --etcd-client-key=${ETCD_CLIENT_TLS_PATH}/etcd-client.key
+          - --etcd-client-ca-crt=${ETCD_CLIENT_TLS_PATH}/etcd-client-ca.crt
+          - --run-interval=5m
+          - --kms-provider-name=${KMS_PROVIDER_NAME}
+        volumeMounts:
+        - mountPath: /etc/etcdtls/operator/etcd-tls
+          name: etcd-client-tls
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      restartPolicy: Always
+      volumes:
+      - name: etcd-client-tls
+        secret:
+          defaultMode: 420
+          secretName: etcd-client-tls-in-use
